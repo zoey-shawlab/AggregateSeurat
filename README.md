@@ -52,5 +52,14 @@ server <- function(input, output, session) {
   })
 }
 
+# writing pseudobulked section
+
+output$pseudobulked <- renderTable({
+    seurat <- seurat_obj()
+    req(seurat)
+
+    
+
+
 # Run the application 
 shinyApp(ui = ui, server = server)
