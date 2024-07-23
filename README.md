@@ -6,7 +6,7 @@
 
 # Installing necessary packages
 library(shiny)
-library(Seurat)
+library(Seurat) 
 options(shiny.maxRequestSize = 10000*1024^2)
 
 
