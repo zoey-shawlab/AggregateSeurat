@@ -1,10 +1,8 @@
 # AggregateSeurat
 
-# Creating a Shiny App that will allow a use to input a Seurat Object, 
-# select the headers from the Seurat Object that they want to see,
-# then Aggregate Expression, display as a table, and download
+### Creating a Shiny App that will allow a use to input a Seurat Object, select the headers from the Seurat Object that they want to see, then Aggregate Expression, display as a table, and download
 
-# Installing necessary packages
+### Installing necessary packages
 library(shiny)
 library(Seurat)
 library(SeuratDisk)
@@ -13,7 +11,7 @@ library(DT)
 options(shiny.maxRequestSize = 10000*1024^2)
 
 
-# writing ui 
+### writing ui 
 ui <- fluidPage(
   
   titlePanel("Upload and Pseudobulk Seurat Object"), 
@@ -38,7 +36,7 @@ ui <- fluidPage(
 )
 
 
-# writing server function
+### writing server function
 server <- function(input, output, session) {
   seurat_obj <- reactive({
     req(input$uploadButton)
@@ -49,7 +47,7 @@ server <- function(input, output, session) {
     return(seurat_obj)
   })
   
-  # create select function for pseudobulk
+  ### create select function for pseudobulk
   output$select_pseudobulk <- renderUI({
     seurat <- seurat_obj()
     req(seurat)  
@@ -59,7 +57,7 @@ server <- function(input, output, session) {
     selectizeInput("selected_columns", "Select Columns to Pseudobulk", choices = col_names, multiple = TRUE)
   })
   
-  # displaying table on original seurat object tab
+  ### displaying table on original seurat object tab
   output$contents <- renderDataTable({
     seurat <- seurat_obj()
     req(seurat)
@@ -67,7 +65,7 @@ server <- function(input, output, session) {
   })
   
   
-  # pseudobulk button 
+  ### pseudobulk button 
   output$pseudobulk_button <- renderUI({
     selected_columns <- input$selected_columns
     if (length(selected_columns) > 0) {
@@ -81,7 +79,7 @@ server <- function(input, output, session) {
     pseudobulk_action(TRUE)
   })
   
-  # pseudobulk table 
+  ### pseudobulk table 
   output$pseudobulked <- renderDataTable({
     seurat <- seurat_obj()
     req(seurat)
@@ -104,5 +102,5 @@ server <- function(input, output, session) {
   })
 }
 
-# Run the application 
+### Run the application 
 shinyApp(ui = ui, server = server)
