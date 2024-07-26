@@ -66,7 +66,7 @@ server <- function(input, output, session) {
   })
   
   
-  # pseudobulk button 
+   # pseudobulk button 
   output$pseudobulk_button <- renderUI({
     selected_columns <- input$selected_columns
     if (length(selected_columns) > 0) {
@@ -91,11 +91,11 @@ server <- function(input, output, session) {
       if (length(selected_columns) > 0 && all(selected_columns %in% colnames(seurat@meta.data))) {
         
         aggregated_data <- AggregateExpression(seurat, group.by = selected_columns)
+      
+        aggregated_df <- as.data.frame(aggregated_data$RNA)  # Adjust based on actual structure
         
-        as.data.frame(aggregated_data$RNA)
       } else {
-  
-        data.frame(Error = "Selected columns not found in metadata or none selected")
+        return(data.frame(Error = "Selected columns not found in metadata"))
       }
     } else {
       NULL
