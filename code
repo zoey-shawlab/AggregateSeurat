@@ -48,6 +48,21 @@ server <- function(input, output, session) {
     return(seurat_obj)
   })
   
+  # allow RDS file
+  seurat_obj <- reactive({
+    req(input$uploadButton)
+    inFile <- input$seuratobj
+    if (is.null(inFile))
+      return(NULL)
+    file_extension <- gsub(".*\\.", "", inFile$name)
+    if(file_extension == "h5seurat"){
+      seurat_obj <- LoadH5Seurat(inFile$datapath)
+    }else if (file_extension == "rds"){
+      seurat_obj <- readRDS(inFile$datapath)
+    }
+    return(seurat_obj)
+  })
+  
   # create select function for pseudobulk
   output$select_pseudobulk <- renderUI({
     seurat <- seurat_obj()
@@ -60,13 +75,11 @@ server <- function(input, output, session) {
   
   # displaying table on original seurat object tab
   output$contents <- renderDataTable({
-    seurat <- seurat_obj()
-    req(seurat)
-    head(seurat, n = 100)
+    seurat <- seurat_obj()@meta.data
   })
   
   
-   # pseudobulk button 
+  # pseudobulk button 
   output$pseudobulk_button <- renderUI({
     selected_columns <- input$selected_columns
     if (length(selected_columns) > 0) {
