@@ -8,24 +8,25 @@ library(shiny)
 library(Seurat)
 library(SeuratDisk)
 library(DT)
+library(zip)
 
 options(shiny.maxRequestSize = 10000*1024^2)
 
-
-# writing ui 
+# writing ui
 ui <- fluidPage(
-  
   titlePanel("Upload and Pseudobulk Seurat Object"), 
-  
   sidebarLayout(
     sidebarPanel(
       textInput("projectName", "Project Name"),
       fileInput("seuratobj", "Choose Seurat Object",
-                accept = c(".h5seurat")),
+                accept = c(".h5seurat", ".rds")),
       checkboxInput("headers", "File has headers", TRUE),
+      actionButton("uploadButton", "Upload Seurat Object"),
       uiOutput("select_pseudobulk"),
       uiOutput("pseudobulk_button"),
-      actionButton("uploadButton", "Upload")
+      uiOutput("select_layer"),
+      uiOutput("download_select_ui"),
+      uiOutput("download_ui")
     ),
     mainPanel(
       tabsetPanel(
@@ -36,19 +37,8 @@ ui <- fluidPage(
   )
 )
 
-
-# writing server function
+# writing server
 server <- function(input, output, session) {
-  seurat_obj <- reactive({
-    req(input$uploadButton)
-    inFile <- input$seuratobj
-    if (is.null(inFile))
-      return(NULL)
-    seurat_obj <- LoadH5Seurat(inFile$datapath)
-    return(seurat_obj)
-  })
-  
-  # allow RDS file
   seurat_obj <- reactive({
     req(input$uploadButton)
     inFile <- input$seuratobj
@@ -62,59 +52,143 @@ server <- function(input, output, session) {
     }
     return(seurat_obj)
   })
-  
-  # create select function for pseudobulk
+  # original data table
+  output$contents <- renderDataTable({
+    seurat <- seurat_obj()@meta.data
+  })
+  # select pseudobulk button
+  saved_pseudobulked <- reactiveVal(data.frame())
   output$select_pseudobulk <- renderUI({
     seurat <- seurat_obj()
     req(seurat)  
     
     col_names <- colnames(seurat@meta.data)
-    
     selectizeInput("selected_columns", "Select Columns to Pseudobulk", choices = col_names, multiple = TRUE)
   })
   
-  # displaying table on original seurat object tab
-  output$contents <- renderDataTable({
-    seurat <- seurat_obj()@meta.data
-  })
-  
-  
-  # pseudobulk button 
   output$pseudobulk_button <- renderUI({
     selected_columns <- input$selected_columns
     if (length(selected_columns) > 0) {
       actionButton("pseudobulkButton", "Pseudobulk")
-    }
-  })
-  
-  pseudobulk_action <- reactiveVal(FALSE)
-  
-  observeEvent(input$pseudobulkButton, {
-    pseudobulk_action(TRUE)
-  })
-  
-  # pseudobulk table 
-  output$pseudobulked <- renderDataTable({
-    seurat <- seurat_obj()
-    req(seurat)
-    
-    if (pseudobulk_action()) {
-      selected_columns <- input$selected_columns
-      
-      if (length(selected_columns) > 0 && all(selected_columns %in% colnames(seurat@meta.data))) {
-        
-        aggregated_data <- AggregateExpression(seurat, group.by = selected_columns)
-      
-        aggregated_df <- as.data.frame(aggregated_data$RNA)  # Adjust based on actual structure
-        
-      } else {
-        return(data.frame(Error = "Selected columns not found in metadata"))
-      }
     } else {
       NULL
     }
   })
+  
+  # pseudobulk seurat object
+  observeEvent(input$pseudobulkButton, {
+    seurat <- seurat_obj()
+    req(seurat)
+    
+    selected_columns <- input$selected_columns
+    
+    if (length(selected_columns) > 0 && all(selected_columns %in% colnames(seurat@meta.data))) {
+      aggregated_data <- AggregateExpression(seurat, group.by = selected_columns)
+      aggregated_df <- as.data.frame(aggregated_data)
+      saved_pseudobulked(aggregated_df)
+    } else {
+      saved_pseudobulked(data.frame(Error = "Selected columns not found in metadata"))
+    }
+  })
+  
+  output$pseudobulked <- renderDT({
+    saved_pseudobulked()
+  })
+  
+  
+  # download dropdown
+  output$download_select_ui <- renderUI({
+    if (nrow(saved_pseudobulked()) > 0) {
+      selectizeInput("file_type", "Select file type to download", 
+                     choices = c("Pseudobulked Seurat" = "rds", "Data (tsv)" = "tsv_data", "Normalized Data (tsv)" = "tsv_normdata", "Counts (tsv)" = "tsv_counts", "Scaled Data (tsv)" = "tsv_scaled", "Metadata (tsv)" = "tsv_metadata"),
+                     multiple = TRUE)
+    } else {
+      NULL
+    }
+  })
+  
+  # downloading files 
+  output$download_ui <- renderUI({
+    if (nrow(saved_pseudobulked()) > 0) {
+      downloadButton("downloadDataZip", "Download All as ZIP")
+    } else {
+      NULL
+    }
+  })
+  
+  output$downloadDataZip <- downloadHandler(
+    filename = function() {
+      paste0(input$projectName, "_files.zip")
+    },
+    content = function(file) {
+      temp_dir <- tempdir()
+      temp_files <- c()
+      
+      seurat <- saved_pseudobulked()
+      req(seurat)
+      
+      file_types <- input$file_type
+      
+      # save Seurat object as RDS
+      if ("rds" %in% file_types) {
+        rds_path <- file.path(temp_dir, paste0(input$projectName, "_pseudobulked_data.rds"))
+        saveRDS(saved_pseudobulked(), rds_path)
+        temp_files <- c(temp_files, rds_path)
+      }
+      
+      # save data as tsv
+      if ("tsv_data" %in% file_types) {
+        tsv_data_path <- file.path(temp_dir, paste0(input$projectName, "_pseudobulked_data.tsv"))
+        write.table(saved_pseudobulked(), tsv_data_path, sep = "\t", row.names = FALSE, quote = FALSE)
+        temp_files <- c(temp_files, tsv_data_path)
+      }
+      
+      # save normalized data as TSV
+      if ("tsv_data" %in% file_types) {
+        rna_assay <- seurat@assays[["RNA"]]
+        data_matrix <- rna_assay@data
+        tsv_data_path <- file.path(temp_dir, paste0(input$projectName, "_pseudobulked_data.tsv"))
+        write.table(data_matrix(), tsv_data_path, sep = "\t", row.names = TRUE, quote = FALSE)
+        temp_files <- c(temp_files, tsv_data_path)
+      }
+      
+      # save counts data as TSV
+      if ("tsv_counts" %in% file_types) {
+        rna_assay <- seurat@assays[["RNA"]]
+        counts_matrix <- rna_assay@counts
+        tsv_counts_path <- file.path(temp_dir, paste0(input$projectName, "_pseudobulked_counts.tsv"))
+        write.table(counts_matrix(), tsv_counts_path, sep = "\t", row.names = TRUE, quote = FALSE)
+        temp_files <- c(temp_files, tsv_counts_path)
+      }
+      
+      # save scaled data as TSV
+      if ("tsv_scaled" %in% file_types) {
+        rna_assay <- seurat@assays[["RNA"]]
+        scaled_data_matrix <- rna_assay@scale.data
+        tsv_scaled_path <- file.path(temp_dir, paste0(input$projectName, "_pseudobulked_scaled_data.tsv"))
+        write.table(scaled_data_matrix(), tsv_scaled_path, sep = "\t", row.names = TRUE, quote = FALSE)
+        temp_files <- c(temp_files, tsv_scaled_path)
+      }
+      
+      # save metadata as TSV
+      if ("tsv_metadata" %in% file_types) {
+        selected_columns <- input$selected_columns
+        if (length(selected_columns) > 0) {
+          metadata_df <- saved_pseudobulked()@meta.data
+          tsv_metadata_path <- file.path(temp_dir, paste0(input$projectName, "_pseudobulked_metadata.tsv"))
+          write.table(metadata_df, tsv_metadata_path, sep = "\t", row.names = FALSE, quote = FALSE)
+          temp_files <- c(temp_files, tsv_metadata_path)
+        }
+      }
+      
+      # zip file
+      if (length(temp_files) > 0) {
+        zip::zip(zipfile = file, files = temp_files)
+      } else {
+        showNotification("Error: No files to download.", type = "error")
+      }
+    }
+  )
 }
 
-# Run the application 
 shinyApp(ui = ui, server = server)
