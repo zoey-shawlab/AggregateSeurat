@@ -77,7 +77,6 @@ server <- function(input, output, session) {
       NULL
     }
   })
-
   saved_pseudobulked <- reactiveVal(NULL)
   saved_seurat <- reactiveVal(NULL)
   aggregated_data <- reactiveVal(NULL)
@@ -174,7 +173,7 @@ server <- function(input, output, session) {
         }
       }
       
-      # zip file
+      # zip file of the selected files
       if (length(temp_files) > 0) {
         zip::zipr(
           zipfile = file,
