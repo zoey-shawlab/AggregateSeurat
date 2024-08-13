@@ -1,1 +1,5 @@
-### Creating a Shiny App that will allow a use to input a Seurat Object, select the headers from the Seurat Object that they want to see, then Aggregate Expression, display as a table, and download
+# Pseudobulk Seurat Object 
+
+## Introduction 
+Single cell RNA- Sequencing is a popular method used to detect and quantitatively analyze RNA of individual cells in complex tissues. 
+
