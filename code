@@ -1,12 +1,13 @@
 # AggregateSeurat
 
 ### Creating a Shiny App that will allow a use to input a Seurat Object, select the headers from the Seurat Object that they want to see,
-then Aggregate Expression, display as a table, and download
+#then Aggregate Expression, display as a table, and download
 
 # installing necessary packages
 library(shiny)
 library(Seurat)
 library(SeuratDisk)
+library(dplyr)
 library(DT)
 library(zip)
 
@@ -14,14 +15,15 @@ options(shiny.maxRequestSize = 10000*1024^2)
 
 # writing ui
 ui <- fluidPage(
-  titlePanel("Upload and Pseudobulk Seurat Object"), 
+  titlePanel("Pseudobulk scRNA-Seq Seurat Object"), 
   sidebarLayout(
     sidebarPanel(
       textInput("projectName", "Project Name"),
       fileInput("seuratobj", "Choose Seurat Object",
                 accept = c(".h5seurat", ".rds")),
       checkboxInput("headers", "File has headers", TRUE),
-      actionButton("uploadButton", "Upload Seurat Object"),
+      uiOutput("file_status_ui"), 
+      uiOutput("action_button_ui"), 
       uiOutput("select_pseudobulk"),
       uiOutput("pseudobulk_button"),
       uiOutput("select_layer"),
@@ -37,13 +39,23 @@ ui <- fluidPage(
   )
 )
 
+
 # writing server
 server <- function(input, output, session) {
+  
   seurat_obj <- reactive({
-    req(input$uploadButton)
     inFile <- input$seuratobj
-    if (is.null(inFile))
-      return(NULL)
+    if (is.null(inFile)) {
+      file_path <- "~/Downloads/example.h5seurat"
+      if (file.exists(file_path)) {
+        seurat_obj <- LoadH5Seurat(file_path)
+        return(seurat_obj)
+      } else {
+        showNotification("The default Seurat object file is not found. Please check the file path.", type = "error")
+        return(NULL)
+      }
+    }
+    
     file_extension <- gsub(".*\\.", "", inFile$name)
     if(file_extension == "h5seurat"){
       seurat_obj <- LoadH5Seurat(inFile$datapath)
@@ -53,7 +65,33 @@ server <- function(input, output, session) {
     return(seurat_obj)
   })
   
-
+  
+  output$file_status_ui <- renderUI({
+    inFile <- input$seuratobj
+    
+    if (is.null(inFile)) {
+      file_status <- "Default file is being used: ~/Downloads/example.h5seurat"
+    } else {
+      file_status <- paste("Selected file:", inFile$name)
+    }
+    
+    tagList(
+      textOutput("fileStatus"),
+      br(), 
+      actionButton("uploadButton", "Upload Seurat Object")
+    )
+  })
+  
+  output$fileStatus <- renderText({
+    inFile <- input$seuratobj
+    
+    if (is.null(inFile)) {
+      return("Default file is being used: ~/Downloads/example.h5seurat")
+    } else {
+      return(paste("Selected file:", inFile$name))
+    }
+  })
+  
   # original data table
   output$contents <- renderDataTable({
     seurat <- seurat_obj()
@@ -89,9 +127,6 @@ server <- function(input, output, session) {
     selected_columns <- input$selected_columns
     
     if (length(selected_columns) > 0 && all(selected_columns %in% colnames(seurat@meta.data))) {
-      aggregated_data_matrix <- AggregateExpression(seurat, group.by = selected_columns)
-      aggregated_df <- as.data.frame(aggregated_data_matrix)
-      saved_pseudobulked(aggregated_df)
       aggregated_seurat <- AggregateExpression(seurat, group.by = selected_columns, return.seurat = TRUE)
       saved_seurat(aggregated_seurat)
     } else {
@@ -101,7 +136,12 @@ server <- function(input, output, session) {
   
   # pseudobulked table
   output$pseudobulked <- renderDT({
-    saved_pseudobulked()
+    counts_matrix <- saved_seurat()@assays[["RNA"]]@layers[["counts"]]
+    pseudobulk_DT <- as.data.frame(counts_matrix)
+    colnames(pseudobulk_DT) <- saved_seurat()@active.ident
+    pseudobulk_DT$Genes <- seurat_obj()@assays[["RNA"]]@counts@Dimnames[[1]]
+    pseudobulk_DT <- relocate(pseudobulk_DT, "Genes")
+    pseudobulk_DT
   })
   
   
@@ -114,7 +154,6 @@ server <- function(input, output, session) {
     
     selectizeInput("file_type", "Select file type to download", 
                    choices = c("Pseudobulked Seurat" = "rds",
-                               "Data (tsv)" = "tsv_data",
                                "Metadata (tsv)" = "tsv_metadata",
                                layer_names),
                    multiple = TRUE)
@@ -124,7 +163,6 @@ server <- function(input, output, session) {
     req(saved_seurat())
     downloadButton("downloadDataZip", "Download All as ZIP")
   })
-  
   
   
   #download all files selected 
@@ -138,21 +176,14 @@ server <- function(input, output, session) {
       
       selected_files <- input$file_type
       
-      # save pseudobulked data as RDS
+      
       if ("rds" %in% selected_files) {
         rds_path <- file.path(temp_dir, paste0(input$projectName, "_pseudobulked_data.rds"))
         saveRDS(saved_seurat(), rds_path)
         temp_files <- c(temp_files, rds_path)
       }
       
-      # save pseudobulked data as TSV
-      if ("tsv_data" %in% selected_files) {
-        tsv_data_path <- file.path(temp_dir, paste0(input$projectName, "_pseudobulked_data.tsv"))
-        write.table(saved_pseudobulked(), tsv_data_path, sep = "\t", row.names = FALSE, quote = FALSE)
-        temp_files <- c(temp_files, tsv_data_path)
-      }
       
-      # save metadata as TSV
       if ("tsv_metadata" %in% selected_files) {
         req(saved_seurat())
         metadata_df <- saved_seurat()@meta.data
@@ -161,12 +192,15 @@ server <- function(input, output, session) {
         temp_files <- c(temp_files, tsv_metadata_path)
       }
       
-      # save layers
+      
       rna_assay <- saved_seurat()@assays[["RNA"]]
       layers <- rna_assay@layers
       for (layer_name in selected_files) {
         if (layer_name %in% names(layers)) {
-          layer_matrix <- layers[[layer_name]]
+          layer_matrix <- as.data.frame(layers[[layer_name]])
+          colnames(layer_matrix) <- saved_seurat()@active.ident
+          layer_matrix$Genes <- seurat_obj()@assays[["RNA"]]@counts@Dimnames[[1]]
+          layer_matrix <- relocate(layer_matrix, "Genes")
           file_path <- file.path(temp_dir, paste0(layer_name, ".tsv"))
           write.table(layer_matrix, file_path, sep = "\t", row.names = FALSE, col.names = TRUE)
           temp_files <- c(temp_files, file_path)
@@ -180,11 +214,13 @@ server <- function(input, output, session) {
           files = temp_files
         )
       } else {
+        
         showNotification("Error: No files to download.", type = "error")
       }
     },
     contentType = "application/zip"
   )
+
 }
 
 shinyApp(ui = ui, server = server)
