@@ -22,13 +22,21 @@ ui <- fluidPage(
       fileInput("seuratobj", "Choose Seurat Object",
                 accept = c(".h5seurat", ".rds")),
       checkboxInput("headers", "File has headers", TRUE),
-      uiOutput("file_status_ui"), 
-      uiOutput("action_button_ui"), 
+      actionButton("uploadButton", "Upload Seurat Object"),
       uiOutput("select_pseudobulk"),
       uiOutput("pseudobulk_button"),
       uiOutput("select_layer"),
       uiOutput("download_select_ui"),
-      uiOutput("download_ui")
+      uiOutput("download_ui"),
+      tags$div(
+        style = "margin-top: 20px;",
+        tags$a(
+          href = "https://github.com/shawlab-moffitt/BERLIN/blob/main/2-Single_Cell_RNAseq_Pipeline/Output/Single_Cell_RNAseq_Output/GSE116256_AMLscRNA_h5friendly.h5seurat",
+          "Download Example Seurat Object",
+          style = "color: blue; text-decoration: underline;",
+          target = "_blank"
+        )
+      )
     ),
     mainPanel(
       tabsetPanel(
@@ -64,33 +72,7 @@ server <- function(input, output, session) {
     }
     return(seurat_obj)
   })
-  
-  
-  output$file_status_ui <- renderUI({
-    inFile <- input$seuratobj
-    
-    if (is.null(inFile)) {
-      file_status <- "Default file is being used: ~/Downloads/example.h5seurat"
-    } else {
-      file_status <- paste("Selected file:", inFile$name)
-    }
-    
-    tagList(
-      textOutput("fileStatus"),
-      br(), 
-      actionButton("uploadButton", "Upload Seurat Object")
-    )
-  })
-  
-  output$fileStatus <- renderText({
-    inFile <- input$seuratobj
-    
-    if (is.null(inFile)) {
-      return("Default file is being used: ~/Downloads/example.h5seurat")
-    } else {
-      return(paste("Selected file:", inFile$name))
-    }
-  })
+
   
   # original data table
   output$contents <- renderDataTable({
