@@ -31,10 +31,9 @@ ui <- fluidPage(
       tags$div(
         style = "margin-top: 20px;",
         tags$a(
-          href = "https://github.com/shawlab-moffitt/BERLIN/blob/main/2-Single_Cell_RNAseq_Pipeline/Output/Single_Cell_RNAseq_Output/GSE116256_AMLscRNA_h5friendly.h5seurat",
+          href = "https://zenodo.org/records/13338338/files/example.h5seurat?download=1",
           "Download Example Seurat Object",
-          style = "color: blue; text-decoration: underline;",
-          target = "_blank"
+          style = "color: blue; text-decoration: underline;"
         )
       )
     ),
@@ -47,23 +46,13 @@ ui <- fluidPage(
   )
 )
 
-
 # writing server
 server <- function(input, output, session) {
   
   seurat_obj <- reactive({
     inFile <- input$seuratobj
-    if (is.null(inFile)) {
-      file_path <- "~/Downloads/example.h5seurat"
-      if (file.exists(file_path)) {
-        seurat_obj <- LoadH5Seurat(file_path)
-        return(seurat_obj)
-      } else {
-        showNotification("The default Seurat object file is not found. Please check the file path.", type = "error")
-        return(NULL)
-      }
-    }
-    
+    if (is.null(inFile))
+      return(NULL)
     file_extension <- gsub(".*\\.", "", inFile$name)
     if(file_extension == "h5seurat"){
       seurat_obj <- LoadH5Seurat(inFile$datapath)
@@ -72,7 +61,7 @@ server <- function(input, output, session) {
     }
     return(seurat_obj)
   })
-
+  
   
   # original data table
   output$contents <- renderDataTable({
